@@ -1,0 +1,947 @@
+<title>ASCII Christmas Tree</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  /*
+    layout: a vertical "reel" frame (9:16) centered on a dark page —
+    preview canvas on top, a thin HUD strip over its base, a typed
+    code panel below. single-world dark theme by design: this piece
+    IS a night scene, so no light variant.
+  */
+  :root{
+    --bg:#05060a;
+    --frame-bg:#070a12;
+    --panel-bg:#0a0c12;
+    --fg:#c9d1d9;
+    --muted:#4c5566;
+    --dim-red:#b5484f;
+    --cursor-red:#e2555f;
+    --good:#4caf6b;
+    --gold:#e0b34d;
+    --hairline:rgba(255,255,255,0.06);
+    color-scheme: dark;
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    min-height:100%;
+    background:
+      radial-gradient(ellipse 80% 50% at 50% -10%, rgba(40,70,120,0.18), transparent 60%),
+      var(--bg);
+    color:var(--fg);
+    font-family:'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:14px;
+    padding-top:max(28px, env(safe-area-inset-top, 0px));
+    padding-bottom:max(28px, env(safe-area-inset-bottom, 0px));
+    padding-left:max(16px, env(safe-area-inset-left, 0px));
+    padding-right:max(16px, env(safe-area-inset-right, 0px));
+  }
+
+  .label{
+    font-size:11px;
+    letter-spacing:0.22em;
+    text-transform:uppercase;
+    color:var(--muted);
+    text-align:center;
+  }
+  .label b{ color:var(--gold); font-weight:600; letter-spacing:0.22em; }
+
+  .reel{
+    width:min(100%, 420px);
+    aspect-ratio:9/16;
+    background:var(--frame-bg);
+    border-radius:14px;
+    overflow:hidden;
+    position:relative;
+    box-shadow:0 30px 70px -20px rgba(0,0,0,0.7), 0 0 0 1px var(--hairline);
+    display:flex;
+    flex-direction:column;
+    cursor:pointer;
+    user-select:none;
+  }
+
+  .preview{
+    position:relative;
+    flex:0 0 61%;
+    min-height:0;
+    overflow:hidden;
+  }
+  .preview canvas{
+    position:absolute;
+    inset:0;
+    width:100%;
+    height:100%;
+    display:block;
+  }
+
+  .t-readout{
+    position:absolute;
+    top:10px;
+    right:12px;
+    font-size:11px;
+    color:var(--dim-red);
+    letter-spacing:0.04em;
+    font-variant-numeric:tabular-nums;
+    text-shadow:0 1px 3px rgba(0,0,0,0.6);
+  }
+
+  .status-bar{
+    position:absolute;
+    left:0; right:0; bottom:0;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    padding:6px 10px;
+    font-size:9.5px;
+    letter-spacing:0.01em;
+    color:#8a97ab;
+    background:linear-gradient(to top, rgba(4,6,12,0.85), rgba(4,6,12,0));
+    font-variant-numeric:tabular-nums;
+    gap:6px;
+  }
+  .status-bar .stats{
+    flex:1 1 auto;
+    min-width:0;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+  .status-bar .right{ flex:0 0 auto; display:flex; align-items:center; gap:6px; white-space:nowrap; }
+  .dot{
+    width:6px; height:6px; border-radius:50%;
+    background:var(--good);
+    box-shadow:0 0 6px var(--good);
+    display:inline-block;
+    animation:pulse 1.6s ease-in-out infinite;
+  }
+  .dot.paused{ background:var(--dim-red); box-shadow:0 0 6px var(--dim-red); animation:none; }
+  @keyframes pulse{ 0%,100%{opacity:1;} 50%{opacity:0.35;} }
+
+  .editor{
+    flex:1 1 auto;
+    min-height:0;
+    background:var(--panel-bg);
+    border-top:1px solid var(--hairline);
+    overflow:hidden;
+    position:relative;
+    padding:6px 0;
+  }
+  .code-scroll{
+    position:absolute;
+    left:0; right:0; top:6px;
+    will-change:transform;
+  }
+  .line{
+    display:flex;
+    font-size:11.5px;
+    line-height:17px;
+    white-space:pre;
+    padding:0 10px;
+  }
+  .line.current{ background:rgba(226,85,95,0.14); }
+  .lineno{
+    width:26px;
+    flex:0 0 26px;
+    color:var(--muted);
+    text-align:right;
+    margin-right:12px;
+    user-select:none;
+  }
+  .code{ color:var(--fg); }
+  .tok-kw{ color:#ef7a86; }
+  .tok-str{ color:var(--gold); }
+  .tok-num{ color:#7fd3c7; }
+  .tok-fn{ color:#7aa2f7; }
+  .tok-cm{ color:#51586a; font-style:italic; }
+  .cursor{
+    display:inline-block;
+    width:6px; height:13px;
+    background:var(--cursor-red);
+    margin-left:1px;
+    vertical-align:-2px;
+    box-shadow:0 0 5px var(--cursor-red);
+    animation:blink 1s step-end infinite;
+  }
+  @keyframes blink{ 50%{ opacity:0; } }
+
+  .credit{
+    font-size:10px;
+    color:var(--muted);
+    text-align:center;
+    max-width:420px;
+    line-height:1.6;
+    letter-spacing:0.01em;
+  }
+  .credit a{ color:#7aa2f7; text-decoration:none; border-bottom:1px solid rgba(122,162,247,0.3); }
+
+  @media (prefers-reduced-motion: reduce){
+    .dot{ animation:none; }
+    .cursor{ animation:none; }
+  }
+</style>
+
+<div class="label">〜 <b>ASCII CHRISTMAS TREE</b> 〜</div>
+
+<div class="reel" id="reel" title="クリックで一時停止 / 再生">
+  <div class="preview">
+    <canvas id="canvas"></canvas>
+    <div class="t-readout" id="tReadout">t 0.0s</div>
+    <div class="status-bar">
+      <div class="stats" id="stats">rot 0&#176;&nbsp;&nbsp;lights 0&#160;&#160;chars 0</div>
+      <div class="right">
+        <span class="dot" id="runDot"></span>
+        <span id="runLabel">running</span>
+        <span id="fpsLabel">fps 60</span>
+      </div>
+    </div>
+  </div>
+  <div class="editor">
+    <div class="code-scroll" id="codeScroll"></div>
+  </div>
+</div>
+
+<div class="credit">
+  文字だけで組み上がるクリスマスツリー。構成コードが下段で入力されるのと同時に、<br>
+  上段では同じ文字が枝・飾り・雪として回転する。クリックで一時停止。<br>
+  Inspired by <a href="https://www.instagram.com/reel/DfmBvgUNizn/" target="_blank" rel="noopener">@Instagram reel</a>.
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ---------- geometry: build the tree once, in object space ---------- */
+
+  function mulberry32(seed){
+    return function(){
+      seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+      var t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  var rand = mulberry32(1337);
+
+  var TREE_H = 230;
+  var BASE_R = 118;
+  var POT_H = 26;
+  var TRUNK_H = 28;
+  var FOLIAGE_BASE = POT_H + TRUNK_H;
+  var PLANT_H = FOLIAGE_BASE + TREE_H;
+
+  function taper(y){
+    var t = Math.max(0, 1 - y / TREE_H);
+    var wave = 1 + 0.12 * Math.sin(y * 0.17);
+    return BASE_R * Math.pow(t, 0.82) * wave;
+  }
+
+  var needlePts = [];   // {x,y,z,a,t0}
+  var ornaments = [];   // {x,y,z,kind,t0}
+  var garland = [];     // {x,y,z,light,t0}
+  var groundPts = [];   // {x,y,z,kind}
+  var trunkPts = [];    // {x,y,z}
+  var potPts = [];      // {x,y,z,kind}
+
+  // branch tufts: at each tier, a handful of branches radiate outward,
+  // each one a little fan of needle-points that gets bushier toward its
+  // tip -- this is what gives the silhouette its bulk instead of thin rings.
+  (function buildTufts(){
+    var tiers = 22;
+    for (var i = 0; i < tiers; i++){
+      var y = (i / (tiers - 1)) * TREE_H * 0.96 + 4;
+      var R = taper(y);
+      if (R < 4) continue;
+      var heightFrac = y / TREE_H;
+      var nb = Math.round(7 + 11 * (1 - heightFrac));
+      for (var b = 0; b < nb; b++){
+        var a = (b / nb) * Math.PI * 2 + i * 0.618 * Math.PI * 2 + (rand() - 0.5) * 0.3;
+        var L = R * (0.82 + rand() * 0.24);
+        var n = Math.round(10 + rand() * 16);
+        var dx = Math.cos(a), dz = Math.sin(a);
+        var sx = -Math.sin(a), sz = Math.cos(a);
+        var tuftT0 = 0.72 * heightFrac + 0.03 * rand();
+        for (var k = 0; k < n; k++){
+          var s = Math.pow(rand(), 0.65);
+          var droop = -7 * Math.pow(s, 1.4);
+          var spread = (L * 0.12 + L * 0.3 * s) * (rand() - 0.5) * 2;
+          needlePts.push({
+            x: dx * L * s + sx * spread,
+            y: y + droop + (rand() - 0.5) * 3 + FOLIAGE_BASE,
+            z: dz * L * s + sz * spread,
+            a: a,
+            t0: Math.min(1, tuftT0 + 0.22 * rand())
+          });
+        }
+      }
+    }
+  })();
+
+  // sample a height whose odds favor wide (low) tiers as much as narrow
+  // (high) ones, so an equal number of decorations per ring of arc-length
+  // instead of per unit of height -- otherwise the narrow top looks
+  // crowded while the wide bottom looks bare.
+  function sampleHeightByCircumference(){
+    for (var tries = 0; tries < 40; tries++){
+      var y = 14 + rand() * TREE_H * 0.86;
+      if (rand() < taper(y) / BASE_R) return y;
+    }
+    return 14 + rand() * TREE_H * 0.86;
+  }
+
+  (function buildOrnaments(){
+    var n = 46;
+    for (var i = 0; i < n; i++){
+      var y = sampleHeightByCircumference();
+      var r = taper(y) * 0.84;
+      var a = rand() * Math.PI * 2;
+      var roll = rand();
+      var kind = roll < 0.42 ? 'red' : (roll < 0.76 ? 'gold' : 'cane');
+      ornaments.push({
+        x: r * Math.cos(a), y: y + FOLIAGE_BASE, z: r * Math.sin(a),
+        kind: kind,
+        t0: 0.4 + rand() * 0.3
+      });
+    }
+  })();
+
+  // garland: march around the cone in steps of roughly equal arc-length
+  // (not equal angle) so the thread reads evenly from the wide base to
+  // the narrow top instead of bunching up near the tip.
+  (function buildGarland(){
+    var turns = 3.4, strands = 3, arcStep = 6.5;
+    var y0 = 10, heightSpan = TREE_H * 0.9;
+    var thetaMax = turns * Math.PI * 2;
+    for (var w = 0; w < strands; w++){
+      var theta = w * 0.35;
+      var idx = 0;
+      while (theta <= thetaMax){
+        var t = theta / thetaMax;
+        var a = theta + 0.9;
+        var y = y0 + t * heightSpan - 6 * Math.abs(Math.sin(a * 2.5));
+        var r = taper(y) * 0.92 + w * 0.8;
+        garland.push({
+          x: r * Math.cos(a) + (rand() - 0.5) * 2,
+          y: y + (rand() - 0.5) * 2 + FOLIAGE_BASE,
+          z: r * Math.sin(a) + (rand() - 0.5) * 2,
+          light: (idx % 7 === 0),
+          t0: 0.55 + t * 0.25
+        });
+        theta += arcStep / Math.max(r, 10);
+        idx++;
+      }
+    }
+  })();
+
+  (function buildTrunk(){
+    var levels = 10;
+    for (var i = 0; i < levels; i++){
+      var y = POT_H + (i / (levels - 1)) * TRUNK_H;
+      var r = 9 - 2 * (i / (levels - 1));
+      var count = 10;
+      var offset = rand() * Math.PI * 2;
+      for (var k = 0; k < count; k++){
+        var a = (k / count) * Math.PI * 2 + offset;
+        trunkPts.push({
+          x: r * Math.cos(a) + (rand() - 0.5) * 1.5,
+          y: y + (rand() - 0.5) * 2,
+          z: r * Math.sin(a) + (rand() - 0.5) * 1.5
+        });
+      }
+    }
+  })();
+
+  (function buildPot(){
+    var levels = 9;
+    for (var i = 0; i < levels; i++){
+      var f = i / (levels - 1);
+      var y = f * POT_H;
+      var r = 20 + f * 15;
+      var count = Math.round(16 + f * 10);
+      var offset = rand() * Math.PI * 2;
+      var rim = f > 0.82;
+      for (var k = 0; k < count; k++){
+        var a = (k / count) * Math.PI * 2 + offset;
+        potPts.push({
+          x: r * Math.cos(a), y: y, z: r * Math.sin(a),
+          kind: rim ? 'rim' : 'body'
+        });
+      }
+    }
+  })();
+
+  (function buildGround(){
+    var n = 220;
+    for (var i = 0; i < n; i++){
+      var x = (rand() - 0.5) * 460;
+      var z = (rand() - 0.5) * 300 + 40;
+      var rr = Math.sqrt(x * x + (z - 20) * (z - 20));
+      if (rr < 44) continue;
+      groundPts.push({ x: x, y: rand() * 4, z: z, kind: 'snow' });
+    }
+  })();
+
+  var LIGHTS_COUNT = ornaments.length + garland.filter(function(g){ return g.light; }).length;
+  var TOTAL_CHARS = needlePts.length + ornaments.length + garland.length + groundPts.length + trunkPts.length + potPts.length;
+
+  /* ---------- background stars (screen space, static) ---------- */
+  var bgStars = [];
+  (function buildStars(){
+    for (var i = 0; i < 90; i++){
+      bgStars.push({
+        x: rand(), y: rand(),
+        r: 0.5 + rand() * 1.2,
+        phase: rand() * Math.PI * 2,
+        speed: 0.4 + rand() * 0.8
+      });
+    }
+  })();
+
+  var NEEDLE_CHARS = ['.', ':', ';', '+', '*', 'x', '#'];
+
+  /* ---------- canvas setup ---------- */
+  var canvas = document.getElementById('canvas');
+  var ctx = canvas.getContext('2d');
+  var previewEl = canvas.parentElement;
+  var W = 0, H = 0, DPR = 1;
+
+  function resize(){
+    var rect = previewEl.getBoundingClientRect();
+    DPR = Math.min(2, window.devicePixelRatio || 1);
+    W = Math.max(1, rect.width);
+    H = Math.max(1, rect.height);
+    canvas.width = Math.round(W * DPR);
+    canvas.height = Math.round(H * DPR);
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  }
+  new ResizeObserver(resize).observe(previewEl);
+  resize();
+
+  function lerpColor(c1, c2, t){
+    return [
+      Math.round(c1[0] + (c2[0]-c1[0]) * t),
+      Math.round(c1[1] + (c2[1]-c1[1]) * t),
+      Math.round(c1[2] + (c2[2]-c1[2]) * t)
+    ];
+  }
+  var NEEDLE_DARK = [10, 42, 30];
+  var NEEDLE_MID  = [22, 94, 58];
+  var NEEDLE_HOT  = [86, 196, 120];
+
+  var ROT_SPEED = (Math.PI * 2) / 24; // one turn per 24s
+  var LIGHT_ANGLE = -2.3; // key light from front-left, so the camera-facing side stays bright
+
+  var running = true;
+  var startTime = performance.now();
+  var lastFrame = performance.now();
+  var fpsSmooth = 60;
+  var pausedAt0Elapsed = 0;
+  var BUILD_SECONDS = 7;
+  var growthStartElapsed = 0;
+
+  var CAM_Z = 400;
+  var FOCAL = 260;
+  var BASE_SCALE_AT_ZERO = FOCAL / (FOCAL + CAM_Z);
+
+  function project(x, y, z, magnify){
+    var scale = (FOCAL / (FOCAL + z + CAM_Z)) * magnify;
+    return {
+      sx: x * scale,
+      sy: -y * scale,
+      scale: scale
+    };
+  }
+
+  function draw(now){
+    var elapsed;
+    if (running){
+      elapsed = (now - startTime) / 1000;
+      pausedAt0Elapsed = elapsed;
+    } else {
+      elapsed = pausedAt0Elapsed;
+    }
+    var angle = elapsed * ROT_SPEED;
+    var growth = Math.min(1, Math.max(0, (elapsed - growthStartElapsed) / BUILD_SECONDS));
+
+    var dt = now - lastFrame;
+    lastFrame = now;
+    if (dt > 0){
+      var fps = 1000 / dt;
+      fpsSmooth = fpsSmooth * 0.9 + fps * 0.1;
+    }
+
+    ctx.clearRect(0, 0, W, H);
+
+    // sky gradient
+    var grad = ctx.createLinearGradient(0, 0, 0, H);
+    grad.addColorStop(0, '#060b18');
+    grad.addColorStop(1, '#0d1a33');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+
+    // background stars
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'center';
+    ctx.font = '9px "JetBrains Mono", monospace';
+    for (var s = 0; s < bgStars.length; s++){
+      var st = bgStars[s];
+      var tw = 0.5 + 0.5 * Math.sin(elapsed * st.speed + st.phase);
+      ctx.fillStyle = 'rgba(210,225,255,' + (0.15 + tw * 0.45) + ')';
+      ctx.fillText('.', st.x * W, st.y * H * 0.7);
+    }
+
+    var Y_OFFSET = PLANT_H * 0.5;
+    var magnifyW = (W * 0.40) / (BASE_R * BASE_SCALE_AT_ZERO);
+    var magnifyH = (H * 0.78) / (PLANT_H * BASE_SCALE_AT_ZERO);
+    var magnify = Math.min(magnifyW, magnifyH);
+    var cx = W * 0.5;
+    var cy = H * 0.58;
+
+    var cosA = Math.cos(angle), sinA = Math.sin(angle);
+    var drawables = [];
+
+    function pushPoint(x, y, z, depthKey){
+      var rx = x * cosA - z * sinA;
+      var rz = x * sinA + z * cosA;
+      var p = project(rx, y - Y_OFFSET, rz, magnify);
+      drawables.push({ sx: cx + p.sx, sy: cy + p.sy, depth: rz, scale: p.scale, key: depthKey, rx: rx, rz: rz });
+      return drawables[drawables.length - 1];
+    }
+
+    // ground
+    for (var g = 0; g < groundPts.length; g++){
+      var gp = groundPts[g];
+      var d = pushPoint(gp.x, gp.y, gp.z, 'ground');
+      var fade = 1 - Math.min(1, (Math.abs(gp.x) + Math.abs(gp.z - 40)) / 420);
+      d.alpha = Math.max(0.1, fade);
+    }
+
+    // pot
+    for (var pIdx = 0; pIdx < potPts.length; pIdx++){
+      var pp = potPts[pIdx];
+      var dp = pushPoint(pp.x, pp.y, pp.z, 'pot');
+      dp.kind = pp.kind; dp.alpha = 1;
+    }
+
+    // trunk
+    for (var tIdx = 0; tIdx < trunkPts.length; tIdx++){
+      var tp = trunkPts[tIdx];
+      var dt = pushPoint(tp.x, tp.y, tp.z, 'trunk');
+      dt.alpha = 1;
+    }
+
+    function reveal(t0){
+      return Math.min(1, Math.max(0, (growth - t0) / 0.08));
+    }
+
+    // fade decorations as they swing to the far side, so they don't
+    // appear to float behind the (still fairly sparse) foliage cloud
+    function occlusionFade(rz){
+      return Math.max(0.4, Math.min(1, (92 - rz) / 130));
+    }
+
+    // needles
+    for (var i = 0; i < needlePts.length; i++){
+      var np = needlePts[i];
+      var rv = reveal(np.t0);
+      if (rv <= 0) continue;
+      var d2 = pushPoint(np.x, np.y, np.z, 'needle');
+      var ang2 = Math.atan2(d2.rz, d2.rx);
+      var lit = Math.max(0, Math.cos(ang2 - LIGHT_ANGLE));
+      var brightness = 0.22 + 0.62 * lit + rand_static(i) * 0.16;
+      d2.brightness = brightness;
+      d2.alpha = rv;
+    }
+
+    // garland
+    for (var j = 0; j < garland.length; j++){
+      var gl = garland[j];
+      var rvg = reveal(gl.t0);
+      if (rvg <= 0) continue;
+      var d3 = pushPoint(gl.x, gl.y, gl.z, 'garland');
+      d3.light = gl.light; d3.alpha = rvg * occlusionFade(d3.rz);
+    }
+
+    // ornaments
+    for (var o = 0; o < ornaments.length; o++){
+      var orn = ornaments[o];
+      var rvo = reveal(orn.t0);
+      if (rvo <= 0) continue;
+      var d4 = pushPoint(orn.x, orn.y, orn.z, 'ornament');
+      d4.kind = orn.kind; d4.alpha = rvo * occlusionFade(d4.rz);
+    }
+
+    // paint far-to-near (largest depth first) so nearer points correctly
+    // cover farther ones instead of the reverse
+    drawables.sort(function(a, b){ return b.depth - a.depth; });
+
+    for (var m = 0; m < drawables.length; m++){
+      var pt = drawables[m];
+      var size = Math.max(7, 11 * pt.scale);
+      ctx.font = size.toFixed(1) + 'px "JetBrains Mono", monospace';
+      if (pt.key === 'ground'){
+        ctx.fillStyle = 'rgba(205,216,230,' + (pt.alpha * 0.8) + ')';
+        ctx.fillText('.', pt.sx, pt.sy);
+      } else if (pt.key === 'pot'){
+        ctx.fillStyle = pt.kind === 'rim' ? hexToRgba('#d9b35c', pt.alpha) : hexToRgba('#6e3330', pt.alpha);
+        ctx.fillText(pt.kind === 'rim' ? '=' : '#', pt.sx, pt.sy);
+      } else if (pt.key === 'trunk'){
+        ctx.fillStyle = hexToRgba('#5a3a26', pt.alpha);
+        ctx.fillText('|', pt.sx, pt.sy);
+      } else if (pt.key === 'needle'){
+        var b = pt.brightness;
+        var ch = NEEDLE_CHARS[Math.min(NEEDLE_CHARS.length - 1, Math.floor(b * NEEDLE_CHARS.length))];
+        var col = b < 0.5 ? lerpColor(NEEDLE_DARK, NEEDLE_MID, b * 2) : lerpColor(NEEDLE_MID, NEEDLE_HOT, (b - 0.5) * 2);
+        ctx.fillStyle = 'rgba(' + col.join(',') + ',' + pt.alpha + ')';
+        ctx.fillText(ch, pt.sx, pt.sy);
+      } else if (pt.key === 'garland'){
+        ctx.font = (size * (pt.light ? 1.25 : 1.05)).toFixed(1) + 'px "JetBrains Mono", monospace';
+        ctx.fillStyle = pt.light ? hexToRgba('#ffe9a8', pt.alpha) : hexToRgba('#d9a73c', pt.alpha);
+        ctx.fillText(pt.light ? '*' : 'o', pt.sx, pt.sy);
+      } else if (pt.key === 'ornament'){
+        if (pt.kind === 'cane'){
+          ctx.font = (size * 1.2).toFixed(1) + 'px "JetBrains Mono", monospace';
+          ctx.fillStyle = hexToRgba('#f3ece2', pt.alpha);
+          ctx.fillText('J', pt.sx, pt.sy);
+        } else {
+          ctx.fillStyle = pt.kind === 'red' ? hexToRgba('#e2555f', pt.alpha) : hexToRgba('#f0c75e', pt.alpha);
+          ctx.fillText('O', pt.sx, pt.sy);
+        }
+      }
+    }
+
+    // star at apex -- only once the tree is nearly finished growing
+    var starReveal = reveal(0.82);
+    if (starReveal > 0){
+      var apex = pushPointLite(0, FOLIAGE_BASE + TREE_H + 6, 0, cosA, sinA, magnify, cx, cy);
+      drawStar(apex.sx, apex.sy, elapsed, starReveal);
+    }
+
+    // HUD
+    var degAngle = ((angle * 180 / Math.PI) % 360 + 360) % 360;
+    tReadout.textContent = 't ' + elapsed.toFixed(1) + 's';
+    statsEl.textContent = 'rot ' + degAngle.toFixed(0) + '°  lights ' + LIGHTS_COUNT + '  chars ' + TOTAL_CHARS;
+    fpsLabel.textContent = 'fps ' + Math.round(fpsSmooth);
+
+    requestAnimationFrame(draw);
+  }
+
+  function pushPointLite(x, y, z, cosA, sinA, magnify, cx, cy){
+    var rx = x * cosA - z * sinA;
+    var rz = x * sinA + z * cosA;
+    var p = project(rx, y - PLANT_H * 0.5, rz, magnify);
+    return { sx: cx + p.sx, sy: cy + p.sy };
+  }
+
+  function drawStar(sx, sy, elapsed, reveal){
+    var pulse = (0.75 + 0.25 * Math.sin(elapsed * 2.2)) * reveal;
+    ctx.font = '26px "JetBrains Mono", monospace';
+    ctx.fillStyle = hexToRgba('#fdf6e3', reveal);
+    ctx.fillText('*', sx, sy);
+    var rays = 7;
+    for (var r = 0; r < rays; r++){
+      var a = (r / rays) * Math.PI * 2 + elapsed * 0.3;
+      var len = (r % 2 === 0 ? 32 : 21) * pulse;
+      for (var d = 1; d <= 3; d++){
+        var dist = (len / 3) * d;
+        var alpha = (1 - d / 3.4) * pulse;
+        ctx.fillStyle = 'rgba(253,246,227,' + alpha + ')';
+        ctx.font = (18 - 2 * d) + 'px "JetBrains Mono", monospace';
+        ctx.fillText('.', sx + Math.cos(a) * dist, sy + Math.sin(a) * dist);
+      }
+    }
+  }
+
+  function hexToRgba(hex, alpha){
+    if (!hex) return 'rgba(255,255,255,' + alpha + ')';
+    var r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+    return 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')';
+  }
+
+  var staticRandCache = [];
+  function rand_static(i){
+    if (staticRandCache[i] === undefined) staticRandCache[i] = Math.random();
+    return staticRandCache[i];
+  }
+
+  var tReadout = document.getElementById('tReadout');
+  var statsEl = document.getElementById('stats');
+  var fpsLabel = document.getElementById('fpsLabel');
+  var runDot = document.getElementById('runDot');
+  var runLabel = document.getElementById('runLabel');
+
+  requestAnimationFrame(draw);
+
+  /* ---------- code typing panel ---------- */
+
+  var SOURCE = [
+"import numpy as np",
+"",
+"TAU = 2 * np.pi",
+"NEEDLE = '.:;+*x#'",
+"TRUNK, BALL, LIGHT = '|', 'oO@', '+*'",
+"GARLAND, GIFT, RIBBON, SNOWCAP = '.', '#%', '-', '`'",
+"Y0, Y1 = 0.42, 2.55",
+"",
+"",
+"def unit(v):",
+"    n = np.linalg.norm(v, axis=-1, keepdims=True)",
+"    return v / np.clip(n, 1e-9, None)",
+"",
+"",
+"def fib(n):",
+"    i = np.arange(n) + 0.5",
+"    y = 1 - 2 * i / n",
+"    r = np.sqrt(1 - y * y)",
+"    th = np.pi * (3 - np.sqrt(5)) * i",
+"    return np.stack(",
+"        [r * np.cos(th), y, r * np.sin(th)], 1",
+"    )",
+"",
+"",
+"def envelope(y):",
+"    f = np.clip((y - Y0) / (Y1 - Y0), 0, 1)",
+"    return 0.03 + 0.84 * (1 - f) ** 1.08",
+"",
+"",
+"class Parts:",
+"    def __init__(s):",
+"        s.P, s.C, s.K = [], [], []",
+"        s.T, s.PH = [], []",
+"",
+"    def add(s, p, col, kind, t0, ph=0.0):",
+"        m = len(p)",
+"        s.P.append(np.asarray(p, float))",
+"        s.C.append(np.broadcast_to(col, (m, 3)))",
+"        s.K.append(np.full(m, kind))",
+"        s.T.append(np.broadcast_to(t0, (m,)))",
+"        s.PH.append(np.broadcast_to(ph, (m,)))",
+"",
+"    def done(s):",
+"        keys = (s.P, s.C, s.K, s.T, s.PH)",
+"        return [np.concatenate(v) for v in keys]",
+"",
+"",
+"def needle_tufts(rng, q):",
+"    tiers = np.linspace(Y0 + 0.02, Y1 - 0.04, 22)",
+"    for i, y in enumerate(tiers):",
+"        R = envelope(y)",
+"        f = (y - Y0) / (Y1 - Y0)",
+"        nb = int(7 + 11 * (1 - f))",
+"        for b in range(nb):",
+"            a = TAU * b / nb + i * 0.618 * TAU",
+"            a += rng.normal(0, 0.05)",
+"            L = R * rng.uniform(0.82, 1.06)",
+"            n = int(10 + 16 * rng.random())",
+"            d = np.array([np.cos(a), 0, np.sin(a)])",
+"            side = np.array([-np.sin(a), 0, np.cos(a)])",
+"            s = rng.random(n) ** 0.65",
+"            droop = -0.05 * s ** 1.4",
+"            spread = (0.12 + 0.3 * s)",
+"            spread *= (rng.random(n) - 0.5) * 2",
+"            p = ([0, y, 0]",
+"                 + np.outer(L * s, d)",
+"                 + np.outer(spread * L, side)",
+"                 + np.outer(droop, [0, 1, 0]))",
+"            t0 = 0.72 * f + 0.25 * rng.random(n)",
+"            q.add(p, (0.08, 0.3, 0.16), 0, t0, a)",
+"",
+"",
+"def garland(rng, q, strands=3):",
+"    u = np.linspace(0, 1, 160)",
+"    turns = 3.4",
+"    for w in range(strands):",
+"        a = u * turns * TAU + 0.9",
+"        y = Y0 + u * (Y1 - Y0) * 0.9",
+"        y = y - 0.06 * np.abs(np.sin(a * 2.5))",
+"        r = envelope(y) + w * 0.01",
+"        p = np.stack([r * np.cos(a), y, r * np.sin(a)], 1)",
+"        lit = ((np.arange(160) + w) % 9 == 0)",
+"        kind = np.where(lit, 2, 1)",
+"        q.add(p, (0.88, 0.69, 0.31), kind, 0.55 + u * 0.25)",
+"",
+"",
+"def ornaments(rng, q, n=34):",
+"    y = rng.uniform(Y0 + 0.1, Y1 - 0.2, n)",
+"    r = envelope(y) * 0.99",
+"    a = rng.random(n) * TAU",
+"    p = np.stack([r * np.cos(a), y, r * np.sin(a)], 1)",
+"    red = rng.random(n) < 0.55",
+"    col = np.where(",
+"        red[:, None], (0.85, 0.3, 0.33), (0.88, 0.69, 0.31)",
+"    )",
+"    q.add(p, col, 3, 0.4 + 0.3 * rng.random(n))",
+"",
+"",
+"def star(q):",
+"    p = fib(7) * 0.18 + [0, Y1 + 0.05, 0]",
+"    q.add(p, (0.99, 0.96, 0.89), 4, t0=0.82)",
+"",
+"",
+"def build():",
+"    rng = np.random.default_rng(7)",
+"    q = Parts()",
+"    needle_tufts(rng, q)",
+"    garland(rng, q)",
+"    ornaments(rng, q)",
+"    star(q)",
+"    return q.done()",
+"",
+"",
+"def rotate_y(p, angle):",
+"    c, si = np.cos(angle), np.sin(angle)",
+"    x, y, z = p[:, 0], p[:, 1], p[:, 2]",
+"    return np.stack([x * c - z * si, y, x * si + z * c], 1)",
+"",
+"",
+"def project(p, cam=4.2, focal=2.8):",
+"    scale = focal / (focal + p[:, 2] + cam)",
+"    return p[:, 0] * scale, -p[:, 1] * scale, scale",
+"",
+"",
+"def render(points, angle, t):",
+"    P, C, K, T, PH = points",
+"    on = T <= t",
+"    rp = rotate_y(P[on], angle)",
+"    sx, sy, scale = project(rp)",
+"    order = np.argsort(rp[:, 2])",
+"    return sx[order], sy[order], scale[order], K[on][order]",
+"",
+"",
+"# one turn every 24s; the tree regrows every 30s",
+"def main():",
+"    points = build()",
+"    t0 = time.time()",
+"    while True:",
+"        now = time.time() - t0",
+"        angle = now * TAU / 24",
+"        grow = min(1.0, (now % 30) / 7)",
+"        frame = render(points, angle, grow)",
+"        draw(frame)",
+"        tick()",
+"",
+"",
+"if __name__ == '__main__':",
+"    main()"
+  ];
+
+  function escapeHtml(s){
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  var KEYWORDS = ['def','return','for','in','if','elif','else','import','class','self','while','True','False','None','lambda','and','or','not','is','yield'];
+  var kwPattern = new RegExp('\\b(' + KEYWORDS.join('|') + ')\\b', 'g');
+
+  function highlight(line){
+    var escaped = escapeHtml(line);
+    var tokens = [];
+    var pattern = /(#.*$)|('(?:[^'\\]|\\.)*')|(\b\d+\.?\d*\b)|([A-Za-z_][A-Za-z0-9_]*)(\()|(\b(?:def|return|for|in|if|elif|else|import|class|self|while|True|False|None|lambda|and|or|not|is|yield)\b)/g;
+    var last = 0, out = '';
+    var m;
+    while ((m = pattern.exec(escaped)) !== null){
+      out += escaped.slice(last, m.index);
+      if (m[1]) out += '<span class="tok-cm">' + m[1] + '</span>';
+      else if (m[2]) out += '<span class="tok-str">' + m[2] + '</span>';
+      else if (m[3]) out += '<span class="tok-num">' + m[3] + '</span>';
+      else if (m[4]) out += '<span class="tok-fn">' + m[4] + '</span>' + m[5];
+      else if (m[6]) out += '<span class="tok-kw">' + m[6] + '</span>';
+      last = pattern.lastIndex;
+    }
+    out += escaped.slice(last);
+    return out;
+  }
+
+  var highlighted = SOURCE.map(highlight);
+
+  var codeScroll = document.getElementById('codeScroll');
+  var editorEl = document.querySelector('.editor');
+  var currentLine = 0;
+  var currentChar = 0;
+  var typingAccum = 0;
+  var CPS = 84;
+  var loopPauseUntil = 0;
+
+  function renderCode(now){
+    var lineHeight = 17;
+    var visible = Math.max(6, Math.floor((editorEl.clientHeight - 12) / lineHeight));
+    var start = Math.max(0, currentLine - visible + 2);
+
+    var html = '';
+    for (var i = start; i <= currentLine && i < SOURCE.length; i++){
+      var text;
+      if (i < currentLine) text = highlighted[i];
+      else {
+        var raw = SOURCE[i].slice(0, currentChar);
+        text = highlight(raw) + '<span class="cursor"></span>';
+      }
+      html += '<div class="line' + (i === currentLine ? ' current' : '') + '">' +
+                '<span class="lineno">' + (i + 1) + '</span>' +
+                '<span class="code">' + text + '</span>' +
+              '</div>';
+    }
+    codeScroll.innerHTML = html;
+  }
+
+  var lastType = performance.now();
+  function typeTick(now){
+    if (!running){ lastType = now; requestAnimationFrame(typeTick); return; }
+    var dt = (now - lastType) / 1000;
+    lastType = now;
+
+    if (now < loopPauseUntil){
+      requestAnimationFrame(typeTick);
+      return;
+    }
+
+    typingAccum += dt * CPS;
+    var steps = Math.floor(typingAccum);
+    typingAccum -= steps;
+
+    for (var s = 0; s < steps; s++){
+      var line = SOURCE[currentLine] || '';
+      if (currentChar < line.length){
+        currentChar++;
+      } else {
+        currentLine++;
+        currentChar = 0;
+        if (currentLine >= SOURCE.length){
+          currentLine = SOURCE.length - 1;
+          currentChar = SOURCE[currentLine].length;
+          loopPauseUntil = now + 1400;
+          setTimeout(function(){
+            currentLine = 0; currentChar = 0;
+            growthStartElapsed = pausedAt0Elapsed;
+          }, 1500);
+          break;
+        }
+      }
+    }
+    renderCode(now);
+    requestAnimationFrame(typeTick);
+  }
+  requestAnimationFrame(typeTick);
+
+  /* ---------- pause / resume ---------- */
+  var reel = document.getElementById('reel');
+  reel.addEventListener('click', function(){
+    var now = performance.now();
+    if (running){
+      running = false;
+      runDot.classList.add('paused');
+      runLabel.textContent = 'paused';
+    } else {
+      running = true;
+      startTime = now - (pausedAt0Elapsed * 1000);
+      lastFrame = now;
+      lastType = now;
+      runDot.classList.remove('paused');
+      runLabel.textContent = 'running';
+    }
+  });
+
+})();
+</script>
